@@ -1,4 +1,3 @@
-// src/api/auth.api.ts
 import axios from "axios";
 import { buildHeaders } from "../utils/headers";
 
@@ -13,7 +12,7 @@ export type ApiRes<T = any> = {
 export type RegisterPayload = {
   firstName: string;
   lastName: string;
-  phone: string; // SĐT trong CSV
+  phone: string; 
   dateOfBirth: string;
   password: string;
   confirmedPassword: string;
@@ -24,8 +23,6 @@ export type RegisterPayload = {
     source: string;
   };
 };
-
-// ========== REGISTER ==========
 export async function registerUser(user: RegisterPayload, deviceId: string) {
   const phone = String(user.phone || "").replace(/\D/g, "");
 
@@ -46,7 +43,6 @@ export async function registerUser(user: RegisterPayload, deviceId: string) {
   );
 }
 
-// ========== VERIFY REGISTER OTP ==========
 export async function verifyRegisterOtpApi(
   phone: string,
   otp: string,
@@ -66,9 +62,6 @@ export async function verifyRegisterOtpApi(
   );
 }
 
-// (Nếu vẫn cần login cho chỗ khác thì giữ đoạn dưới, không thì bỏ cũng được)
-
-// ========== LOGIN ==========
 export async function loginApi(
   phone: string,
   password: string,
@@ -84,8 +77,6 @@ export async function loginApi(
     }
   );
 }
-
-// ========== VERIFY LOGIN OTP ==========
 export async function verifyLoginOtpApi(
   phone: string,
   otp: string,

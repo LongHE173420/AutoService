@@ -1,4 +1,3 @@
-// src/services/register-from-csv.service.ts
 import fs from "fs";
 import { parse } from "csv-parse/sync";
 import { generateDeviceId } from "../utils/device";
@@ -18,8 +17,6 @@ type CsvRow = {
   dateOfBirth?: string;
 };
 
-// Dùng để nhận biết thông báo kiểu "user đã tồn tại"
-// nhưng chỉ dùng để SKIP, không log ra cho bạn.
 function isAlreadyExistsMessage(msg: string | undefined): boolean {
   if (!msg) return false;
   const lower = msg.toLowerCase();
@@ -31,17 +28,6 @@ function isAlreadyExistsMessage(msg: string | undefined): boolean {
   );
 }
 
-/**
- * Đọc file CSV và tự động:
- *  1) Gọi /auth/register
- *  2) Lấy OTP mẫu từ message
- *  3) Gọi /auth/verify-register-otp để confirm
- *
- * LOG:
- *  - ✅ Chỉ hiện những tài khoản đăng ký + verify OTP thành công
- *  - ❌ Hiện lỗi cho những case fail khác
- *  - 🔇 Tài khoản đã tồn tại: im lặng, không log
- */
 export async function registerFromCsv(filePath: string) {
   if (!fs.existsSync(filePath)) {
     console.warn("⚠️ Không tìm thấy CSV:", filePath);
@@ -75,7 +61,6 @@ export async function registerFromCsv(filePath: string) {
     const password = String(row.password || "").trim();
 
     if (!phone || !password) {
-      // Thiếu phone/password -> vẫn log vì là lỗi data
       console.warn("⚠️ Bỏ qua dòng CSV vì thiếu phone/password:", row);
       failedRows.push({
         phone: phone || row.phone || "<empty>",
@@ -111,19 +96,16 @@ export async function registerFromCsv(filePath: string) {
       const apiRes: ApiRes = res.data;
 
       if (!apiRes?.isSucceed) {
-        // Nếu backend báo "đã tồn tại" -> SKIP im lặng, không log
         if (isAlreadyExistsMessage(apiRes.message)) {
           continue;
         }
 
-        // Các lỗi khác vẫn log
         const reason = apiRes?.message ?? "Unknown error";
         console.error(`❌ Register FAILED ${payload.phone}:`, reason);
         failedRows.push({ phone: payload.phone, reason });
         continue;
       }
 
-      // Thử lấy OTP mẫu trong message: "... OTP mẫu: 123456"
       let otp: string | undefined;
       if (typeof apiRes.message === "string") {
         const match = apiRes.message.match(/(\d{6})/);
@@ -139,7 +121,6 @@ export async function registerFromCsv(filePath: string) {
 
       console.log(`   📩 OTP sample for ${payload.phone}: ${otp}`);
 
-      // Gọi verify-register-otp
       const verifyRes = await verifyRegisterOtpApi(
         payload.phone,
         otp,
@@ -157,7 +138,6 @@ export async function registerFromCsv(filePath: string) {
         continue;
       }
 
-      // ✅ CHỈ log cho user đăng ký + verify OTP thành công
       console.log(
         `✅ ĐĂNG KÝ THÀNH CÔNG: ${payload.phone} | ${payload.firstName} ${payload.lastName} | ${payload.gender} | ${payload.dateOfBirth}`
       );
@@ -176,7 +156,6 @@ export async function registerFromCsv(filePath: string) {
         err?.message ||
         String(err);
 
-      // Nếu lỗi ở HTTP layer mà vẫn là “đã tồn tại” -> skip im lặng
       if (isAlreadyExistsMessage(msg)) {
         continue;
       }
@@ -186,7 +165,6 @@ export async function registerFromCsv(filePath: string) {
     }
   }
 
-  // ====== TỔNG KẾT CUỐI CÙNG ======
   console.log("\n===== TỔNG KẾT CSV =====");
   console.log(`✅ Đăng ký mới thành công : ${successUsers.length}`);
   if (successUsers.length) {
