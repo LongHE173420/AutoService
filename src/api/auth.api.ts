@@ -1,7 +1,7 @@
+// src/api/auth.api.ts
 import axios from "axios";
+import { ENV } from "../config/env";
 import { buildHeaders } from "../utils/headers";
-
-const BASE_URL = "http://localhost:3000";
 
 export type ApiRes<T = any> = {
   isSucceed: boolean;
@@ -12,35 +12,30 @@ export type ApiRes<T = any> = {
 export type RegisterPayload = {
   firstName: string;
   lastName: string;
-  phone: string; 
+  phone: string;
   dateOfBirth: string;
   password: string;
   confirmedPassword: string;
   gender: "MALE" | "FEMALE" | "OTHER";
-  location?: {
-    lat: number;
-    lon: number;
-    source: string;
-  };
+  location?: { lat: number; lon: number; source: string };
 };
-export async function registerUser(user: RegisterPayload, deviceId: string) {
-  const phone = String(user.phone || "").replace(/\D/g, "");
 
-  return axios.post<ApiRes<{ otpSample?: string }>>(
-    `${BASE_URL}/auth/register`,
-    {
-      phone,
-      password: user.password,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      gender: user.gender,
-      dateOfBirth: user.dateOfBirth,
-      location: user.location,
-    },
-    {
-      headers: buildHeaders(deviceId),
-    }
-  );
+function normalizePhone(raw: string) {
+  let p = String(raw || "").trim();
+  p = p.replace(/\D/g, "");
+  return p;
+}
+
+// ===== REGISTER =====
+export async function registerUser(payload: RegisterPayload, deviceId: string) {
+  const body: RegisterPayload = {
+    ...payload,
+    phone: normalizePhone(payload.phone),
+  };
+
+  return axios.post(`${ENV.BASE_URL}/auth/register`, body, {
+    headers: buildHeaders(deviceId),
+  });
 }
 
 export async function verifyRegisterOtpApi(
@@ -48,47 +43,46 @@ export async function verifyRegisterOtpApi(
   otp: string,
   deviceId: string
 ) {
-  const normalizedPhone = String(phone || "").replace(/\D/g, "");
-
-  return axios.post<ApiRes>(
-    `${BASE_URL}/auth/verify-register-otp`,
-    {
-      phone: normalizedPhone,
-      otp,
-    },
-    {
-      headers: buildHeaders(deviceId),
-    }
+  return axios.post(
+    `${ENV.BASE_URL}/auth/verify-register-otp`,
+    { phone: normalizePhone(phone), otp: String(otp || "").trim() },
+    { headers: buildHeaders(deviceId) }
   );
 }
 
-export async function loginApi(
-  phone: string,
-  password: string,
-  deviceId: string
-) {
-  const username = String(phone || "").replace(/\D/g, "");
-
-  return axios.post<ApiRes<{ needOtp: boolean; tokens?: any; otpSample?: string }>>(
-    `${BASE_URL}/auth/login`,
-    { username, password },
-    {
-      headers: buildHeaders(deviceId),
-    }
+export async function resendRegisterOtpApi(phone: string, deviceId: string) {
+  return axios.post(
+    `${ENV.BASE_URL}/auth/resend-otp-register`,
+    { phone: normalizePhone(phone) },
+    { headers: buildHeaders(deviceId) }
   );
 }
+
+// ===== LOGIN =====
+export async function loginApi(phone: string, password: string, deviceId: string) {
+  return axios.post(
+    `${ENV.BASE_URL}/auth/login`,
+    { phone: normalizePhone(phone), password: String(password || "").trim() },
+    { headers: buildHeaders(deviceId) }
+  );
+}
+
 export async function verifyLoginOtpApi(
   phone: string,
   otp: string,
   deviceId: string
 ) {
-  const username = String(phone || "").replace(/\D/g, "");
+  return axios.post(
+    `${ENV.BASE_URL}/auth/verify-login-otp`,
+    { phone: normalizePhone(phone), otp: String(otp || "").trim() },
+    { headers: buildHeaders(deviceId) }
+  );
+}
 
-  return axios.post<ApiRes<{ tokens: any }>>(
-    `${BASE_URL}/auth/verify-login-otp`,
-    { username, otp },
-    {
-      headers: buildHeaders(deviceId),
-    }
+export async function resendLoginOtpApi(phone: string, deviceId: string) {
+  return axios.post(
+    `${ENV.BASE_URL}/auth/resend-otp-login`,
+    { phone: normalizePhone(phone) },
+    { headers: buildHeaders(deviceId) }
   );
 }

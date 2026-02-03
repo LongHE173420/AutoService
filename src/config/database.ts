@@ -1,19 +1,14 @@
 import mysql from "mysql2/promise";
+import { ENV } from "./env";
 
-export const pool = mysql.createPool({
-  host: "localhost",   
-  port: 3306,             
-  user: "root",           
-  password: "Long2002@", 
-  database: "auth_service",     
+export const mysqlPool = mysql.createPool({
+  host: ENV.MYSQL_HOST,
+  port: ENV.MYSQL_PORT,
+  user: ENV.MYSQL_USER,
+  password: ENV.MYSQL_PASSWORD,
+  database: ENV.MYSQL_DATABASE,
   waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+  connectionLimit: ENV.MYSQL_CONN_LIMIT,
+  queueLimit: 0
 });
 
-export async function testDb() {
-  const conn = await pool.getConnection();
-  const [rows] = await conn.query("SELECT 1 AS ok");
-  conn.release();
-  console.log("DB test:", rows);
-}

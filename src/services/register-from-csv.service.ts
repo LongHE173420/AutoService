@@ -1,12 +1,16 @@
 import fs from "fs";
 import { parse } from "csv-parse/sync";
 import { generateDeviceId } from "../utils/device";
+import { logger } from "../config/logger";
+import { ENV } from "../config/env";
 import {
   registerUser,
   verifyRegisterOtpApi,
   type RegisterPayload,
   type ApiRes,
 } from "../api/auth.api";
+import { waitForOtpFromRedis } from "./otp-redis.service";
+import { findUserIdByPhone, insertAuthStatus, insertUserAction } from "../repo/audit.repo";
 
 type CsvRow = {
   phone: string;
@@ -17,22 +21,13 @@ type CsvRow = {
   dateOfBirth?: string;
 };
 
-function isAlreadyExistsMessage(msg: string | undefined): boolean {
-  if (!msg) return false;
-  const lower = msg.toLowerCase();
-  return (
-    lower.includes("đã tồn tại") ||
-    lower.includes("tồn tại") ||
-    lower.includes("already exists") ||
-    lower.includes("exist")
-  );
+function isAlreadyExists(msg: string) {
+  const m = msg.toLowerCase();
+  return m.includes("đã tồn tại") || m.includes("tồn tại");
 }
 
-export async function registerFromCsv(filePath: string) {
-  if (!fs.existsSync(filePath)) {
-    console.warn("⚠️ Không tìm thấy CSV:", filePath);
-    return;
-  }
+export async function registerFromCsv(filePath: string, logId: number) {
+  if (!fs.existsSync(filePath)) return { success: 0, pending: 0, fail: 0 };
 
   const content = fs.readFileSync(filePath);
   const records = parse(content, {
@@ -42,32 +37,17 @@ export async function registerFromCsv(filePath: string) {
   }) as CsvRow[];
 
   if (!Array.isArray(records) || records.length === 0) {
-    console.log("⚠️ CSV trống hoặc không có bản ghi hợp lệ");
-    return;
+    return { success: 0, pending: 0, fail: 0 };
   }
 
-  const successUsers: {
-    phone: string;
-    firstName: string;
-    lastName: string;
-    gender: string;
-    dateOfBirth: string;
-  }[] = [];
-
-  const failedRows: { phone: string; reason: string }[] = [];
+  let success = 0;
+  let pending = 0;
+  let fail = 0;
 
   for (const row of records) {
     const phone = String(row.phone || "").trim();
     const password = String(row.password || "").trim();
-
-    if (!phone || !password) {
-      console.warn("⚠️ Bỏ qua dòng CSV vì thiếu phone/password:", row);
-      failedRows.push({
-        phone: phone || row.phone || "<empty>",
-        reason: "Thiếu phone/password trong CSV",
-      });
-      continue;
-    }
+    if (!phone || !password) continue;
 
     const deviceId = generateDeviceId();
 
@@ -77,110 +57,135 @@ export async function registerFromCsv(filePath: string) {
       confirmedPassword: password,
       firstName: row.firstName?.trim() || "Auto",
       lastName: row.lastName?.trim() || "User",
-      gender:
-        (row.gender?.toUpperCase() as RegisterPayload["gender"]) || "MALE",
+      gender: (row.gender?.toUpperCase() as RegisterPayload["gender"]) || "MALE",
       dateOfBirth: row.dateOfBirth || "2000-01-01",
-      location: {
-        lat: 10.7,
-        lon: 106.6,
-        source: "CSV",
-      },
+      location: { lat: 10.7, lon: 106.6, source: "CSV" },
     };
 
     try {
-      console.log(
-        `▶ Registering: ${payload.phone} | device: ${deviceId} | name: ${payload.firstName} ${payload.lastName}`
-      );
-
       const res = await registerUser(payload, deviceId);
       const apiRes: ApiRes = res.data;
 
       if (!apiRes?.isSucceed) {
-        if (isAlreadyExistsMessage(apiRes.message)) {
+        const msg = apiRes?.message ?? "Unknown error";
+        if (isAlreadyExists(msg)) {
+          // tồn tại => im luôn theo yêu cầu
           continue;
         }
 
-        const reason = apiRes?.message ?? "Unknown error";
-        console.error(`❌ Register FAILED ${payload.phone}:`, reason);
-        failedRows.push({ phone: payload.phone, reason });
+        fail++;
+        const userId = await findUserIdByPhone(phone);
+        await insertAuthStatus({
+          action: "REGISTER",
+          phone,
+          deviceId,
+          userId,
+          status: 0,
+          detail: msg,
+          logId,
+        });
+        await insertUserAction({
+          userId,
+          actionName: "REGISTER",
+          detail: msg,
+          logId,
+        });
+        logger.error(`[REGISTER FAIL] phone=${phone} msg=${msg}`);
         continue;
       }
 
-      let otp: string | undefined;
-      if (typeof apiRes.message === "string") {
-        const match = apiRes.message.match(/(\d{6})/);
-        if (match) otp = match[1];
-      }
-
-      if (!otp) {
-        const reason = `Register OK nhưng không tìm thấy OTP mẫu trong message cho ${payload.phone}`;
-        console.warn("⚠️", reason);
-        failedRows.push({ phone: payload.phone, reason });
+      // Register OK -> chờ OTP (nếu redis không có thì coi là pending, không tính fail)
+      const redisRec = await waitForOtpFromRedis(phone, ENV.OTP_TIMEOUT_MS, ENV.OTP_POLL_MS);
+      if (!redisRec?.otp) {
+        pending++;
+        const userId = await findUserIdByPhone(phone);
+        await insertAuthStatus({
+          action: "REGISTER",
+          phone,
+          deviceId,
+          userId,
+          status: 0,
+          detail: "PENDING_OTP",
+          logId,
+        });
+        await insertUserAction({
+          userId,
+          actionName: "REGISTER",
+          detail: "PENDING_OTP",
+          logId,
+        });
         continue;
       }
 
-      console.log(`   📩 OTP sample for ${payload.phone}: ${otp}`);
+      const otp = redisRec.otp;
 
-      const verifyRes = await verifyRegisterOtpApi(
-        payload.phone,
-        otp,
-        deviceId
-      );
+      const verifyRes = await verifyRegisterOtpApi(phone, otp, deviceId);
       const verifyApi: ApiRes = verifyRes.data;
 
       if (!verifyApi?.isSucceed) {
-        const reason = verifyApi?.message ?? "Unknown error";
-        console.error(
-          `❌ Verify OTP FAILED ${payload.phone}:`,
-          reason
-        );
-        failedRows.push({ phone: payload.phone, reason });
+        fail++;
+        const msg = verifyApi?.message ?? "Verify failed";
+        const userId = await findUserIdByPhone(phone);
+        await insertAuthStatus({
+          action: "REGISTER",
+          phone,
+          deviceId,
+          userId,
+          status: 0,
+          detail: msg,
+          logId,
+        });
+        await insertUserAction({
+          userId,
+          actionName: "REGISTER",
+          detail: msg,
+          logId,
+        });
+        logger.error(`[REGISTER VERIFY FAIL] phone=${phone} otp=${otp} msg=${msg}`);
         continue;
       }
 
-      console.log(
-        `✅ ĐĂNG KÝ THÀNH CÔNG: ${payload.phone} | ${payload.firstName} ${payload.lastName} | ${payload.gender} | ${payload.dateOfBirth}`
-      );
-
-      successUsers.push({
-        phone: payload.phone,
-        firstName: payload.firstName,
-        lastName: payload.lastName,
-        gender: payload.gender,
-        dateOfBirth: payload.dateOfBirth,
+      // ✅ chỉ log thành công
+      success++;
+      const userId = await findUserIdByPhone(phone);
+      await insertAuthStatus({
+        action: "REGISTER",
+        phone,
+        deviceId,
+        userId,
+        status: 1,
+        detail: `OTP=${otp}`,
+        logId,
       });
+      await insertUserAction({
+        userId,
+        actionName: "REGISTER",
+        detail: `SUCCESS OTP=${otp}`,
+        logId,
+      });
+      logger.info(`[REGISTER OK] phone=${phone} OTP=${otp}`);
     } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data ||
-        err?.message ||
-        String(err);
-
-      if (isAlreadyExistsMessage(msg)) {
-        continue;
-      }
-
-      console.error(`❌ ERROR xử lý ${row.phone}:`, msg);
-      failedRows.push({ phone, reason: msg });
+      fail++;
+      const msg = err?.response?.data?.message || err?.message || String(err);
+      const userId = await findUserIdByPhone(phone);
+      await insertAuthStatus({
+        action: "REGISTER",
+        phone,
+        deviceId,
+        userId,
+        status: 0,
+        detail: msg,
+        logId,
+      });
+      await insertUserAction({
+        userId,
+        actionName: "REGISTER",
+        detail: msg,
+        logId,
+      });
+      logger.error(`[REGISTER ERROR] phone=${phone} msg=${msg}`);
     }
   }
 
-  console.log("\n===== TỔNG KẾT CSV =====");
-  console.log(`✅ Đăng ký mới thành công : ${successUsers.length}`);
-  if (successUsers.length) {
-    for (const u of successUsers) {
-      console.log(
-        `   + ${u.phone} | ${u.firstName} ${u.lastName} | ${u.gender} | ${u.dateOfBirth}`
-      );
-    }
-  }
-
-  console.log(`❌ Lỗi khác               : ${failedRows.length}`);
-  if (failedRows.length) {
-    for (const f of failedRows) {
-      console.log(`   - ${f.phone}: ${f.reason}`);
-    }
-  }
-
-  console.log("===== HẾT =====\n");
+  return { success, pending, fail };
 }
