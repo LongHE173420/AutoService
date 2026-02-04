@@ -4,8 +4,8 @@ export type RedisOtpRecord = {
   otp: string;
   sender: string;
   text: string;
-  timestamp: string;   
-  received_at: string; 
+  timestamp: string;
+  received_at: string;
   port: string;
   imei: string;
   index: number;
@@ -64,5 +64,5 @@ export async function waitForOtpFromRedis(
     await new Promise((r) => setTimeout(r, pollMs));
   }
 
-  return null; 
+  return null;
 }

@@ -2,9 +2,11 @@ import path from "path";
 import dotenv from "dotenv";
 
 dotenv.config({
-  path: path.resolve(process.cwd(), "src", ".env"),
+  path: path.resolve(process.cwd(), ".env"),
   override: true,
-});
+  debug: false,
+  quiet: true,
+} as any);
 
 function num(v: any, def: number) {
   const n = Number(v);
