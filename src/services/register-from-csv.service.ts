@@ -1,4 +1,3 @@
-// src/services/register-from-csv.service.ts
 import fs from "fs";
 import { parse } from "csv-parse/sync";
 import { generateDeviceId } from "../utils/device";
@@ -16,7 +15,6 @@ import {
     insertUserAction,
 } from "../repo/audit.repo";
 
-// ✅ Logger type tối giản: chỉ cần .info/.error
 export type AppLogger = {
     info: (obj: any, msg?: string) => void;
     error: (obj: any, msg?: string) => void;
@@ -105,7 +103,7 @@ export async function registerFromCsv(filePath: string, ctx: WorkerCtx) {
             if (!apiRes?.isSucceed) {
                 const msg = apiRes?.message ?? "Unknown error";
 
-                // ✅ "đã tồn tại" => bỏ qua hoàn toàn
+          
                 if (isAlreadyExists(msg)) {
                     console.log(`[SKIP] Phone ${phone} already exists`);
                     continue;
@@ -133,16 +131,16 @@ export async function registerFromCsv(filePath: string, ctx: WorkerCtx) {
                     logId,
                 });
 
-                // ✅ ghi lỗi vào FILE
+               
                 logger.error({ phone, deviceId, err: msg }, "REGISTER_FAIL");
                 continue;
             }
 
-            // Register OK -> chờ OTP (pending nếu không có)
+            
             const redisRec = await waitForOtpFromRedis(phone, otpTimeout, otpPoll);
 
             if (!redisRec?.otp) {
-                // ✅ pending không phải fail => không insert auth_status
+               
                 pending++;
 
                 const userId = await safeFindUserIdByPhone(phone);
@@ -190,7 +188,7 @@ export async function registerFromCsv(filePath: string, ctx: WorkerCtx) {
                 continue;
             }
 
-            // ✅ Success
+         
             success++;
 
             const userId = await safeFindUserIdByPhone(phone);

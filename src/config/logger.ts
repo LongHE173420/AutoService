@@ -1,4 +1,3 @@
-// src/config/logger.ts
 import fs from "fs";
 import path from "path";
 import { Writable } from "stream";
@@ -19,7 +18,6 @@ function normalizeErr(err: any): string | undefined {
 }
 
 function formatLine(o: any): string {
-  // ✅ chỉ giữ đúng 6 field mày cần
   const fields: Array<[string, any]> = [
     ["time", toIsoTime(o?.time)],
     ["logId", o?.logId],
@@ -52,10 +50,9 @@ class KvOnlyStream extends Writable {
       if (!line) continue;
 
       try {
-        const obj = JSON.parse(line); // ✅ JSON hợp lệ
+        const obj = JSON.parse(line); 
         this.out.write(formatLine(obj) + "\n");
       } catch {
-        // fallback nếu có dòng rác
         this.out.write(line + "\n");
       }
     }
@@ -70,11 +67,10 @@ export function createFileLogger(filePath: string) {
   const out = fs.createWriteStream(filePath, { flags: "a", encoding: "utf8" });
   const stream = new KvOnlyStream(out);
 
-  // ✅ để pino xuất JSON chuẩn rồi stream lọc field
   return pino(
     {
-      base: null,        // bỏ pid/hostname
-      messageKey: "msg", // msg nằm trong key "msg"
+      base: null,        
+      messageKey: "msg", 
     },
     stream
   );

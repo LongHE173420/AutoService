@@ -24,11 +24,11 @@ async function runOnce(reason: string) {
   try {
     cleanupOldLogs();
 
-    // 1) tạo log file + lưu tbl_log
+    
     const { fileName, filePath } = getTodayLogPath();
     const logId = await ensureLogRow(fileName, filePath);
 
-    // 2) tạo logger ghi FILE ONLY
+   
     const logger = createFileLogger(filePath).child({
       fileName,
       filePath,
@@ -37,7 +37,7 @@ async function runOnce(reason: string) {
 
     logger.info({ reason, csvPath }, "JOB_START");
 
-    // ✅ 3) ctx chuẩn (2 arg cho register, 1 arg cho login)
+
     const ctx = { logId, logger };
 
     const reg = await registerFromCsv(csvPath, ctx);
@@ -45,7 +45,7 @@ async function runOnce(reason: string) {
 
     logger.info({ reg, log }, "JOB_DONE");
 
-    // ✅ TERMINAL: chỉ in 2 dòng summary
+
     console.log(
       `REGISTER summary: success=${reg.success} pending=${reg.pending} fail=${reg.fail}`
     );
@@ -53,7 +53,7 @@ async function runOnce(reason: string) {
       `LOGIN summary: success=${log.success} pending=${log.pending} fail=${log.fail}`
     );
   } catch {
-    // terminal không in lỗi chi tiết
+
     console.log("REGISTER summary: success=0 pending=0 fail=0");
     console.log("LOGIN summary: success=0 pending=0 fail=0");
   } finally {

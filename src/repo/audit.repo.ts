@@ -35,7 +35,7 @@ export async function insertAuthStatus(params: {
   phone: string;
   deviceId: string;
   userId: number | null;
-  status: 0 | 1; // đúng yêu cầu
+  status: 0 | 1; 
   detail?: string | null;
   logId: number | null;
 }) {

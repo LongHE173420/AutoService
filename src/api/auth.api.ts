@@ -1,4 +1,3 @@
-// src/api/auth.api.ts
 import axios from "axios";
 import { ENV } from "../config/env";
 import { buildHeaders } from "../utils/headers";
@@ -26,7 +25,7 @@ function normalizePhone(raw: string) {
   return p;
 }
 
-// ===== REGISTER =====
+
 export async function registerUser(payload: RegisterPayload, deviceId: string) {
   const body: RegisterPayload = {
     ...payload,
@@ -58,7 +57,7 @@ export async function resendRegisterOtpApi(phone: string, deviceId: string) {
   );
 }
 
-// ===== LOGIN =====
+
 export async function loginApi(phone: string, password: string, deviceId: string) {
   return axios.post(
     `${ENV.BASE_URL}/auth/login`,
